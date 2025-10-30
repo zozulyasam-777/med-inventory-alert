@@ -21,8 +21,8 @@ Built with **n8n**, **PostgreSQL**, and **Telegram** — no Google Sheets, no cl
 
 ---
 
-## 🏗️ Architecture
-```mermaid
+## 🌟 Architecture
+> mermaid
 graph LR
   A[PostgreSQL] -->|Read stock data| B(n8n Workflow)
   B --> C{Is stock low or critical?}
@@ -75,10 +75,10 @@ med-inventory-alert/
     └── n8n-data/               # n8n credentials & workflows (ignored)
 
 
-🔒 Privacy & Compliance
+## 🌟 Privacy & Compliance
 No external SaaS (Google, Airtable, etc.)
 All data stays on your machine
 Ideal for environments under sanctions or with strict data localization laws
 
-📄 License
+## 🌟 License
 MIT License — feel free to use, modify, and deploy.
