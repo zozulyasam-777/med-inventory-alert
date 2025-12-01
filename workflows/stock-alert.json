@@ -1,0 +1,150 @@
+{
+  "name": "stock-alert",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 7,
+              "minute": 1
+            }
+          ]
+        }
+      },
+      "name": "Ежедневная проверка в 8:00",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "770424d9-f09c-42f3-9fc0-29411513fc7f"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  d.name AS drug_name,\n  w.name AS warehouse_name,\n  pt.name AS package_type,\n  s.quantity,\n  s.daily_usage,\n  s.threshold\nFROM stock s\nJOIN drugs d ON s.drug_id = d.id\nJOIN warehouses w ON s.warehouse_id = w.id\nJOIN package_types pt ON d.package_type_id = pt.id\nWHERE s.quantity < s.threshold OR (s.daily_usage > 0 AND s.quantity::FLOAT / s.daily_usage < 3);",
+        "options": {}
+      },
+      "name": "Чтение критических позиций из БД",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "83e651f0-3806-4372-a4f7-4a0e35a4d74f",
+      "credentials": {
+        "postgres": {
+          "id": "YMm88yQI7M18lNM2",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const results = [];\n\nfor (const item of items) {\n  const { drug_name, warehouse_name, package_type, quantity, daily_usage, threshold } = item.json;\n\n  const daysLeft = daily_usage > 0 ? (quantity / daily_usage).toFixed(1) : '∞';\n  const isLowStock = quantity < threshold;\n  const isCritical = daily_usage > 0 && quantity / daily_usage < 3;\n\n  if (isLowStock || isCritical) {\n    results.push({\n      json: {\n        ...item.json,\n        days_left: daysLeft,\n        alert_reason: isLowStock && isCritical\n          ? 'низкий остаток + скоро закончится'\n          : isLowStock\n          ? 'остаток ниже порога'\n          : 'закончится менее чем через 3 дня'\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "name": "Анализ и форматирование",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        400,
+        0
+      ],
+      "id": "dbeaf81b-8e98-493e-81b7-c1e848cc610e"
+    },
+    {
+      "parameters": {
+        "chatId": "1176202075",
+        "text": "=⚠️ Низкий запас на складе!\n\n💊 Препарат: {{$json[\"drug_name\"]}}\n🏢 Склад: {{$json[\"warehouse_name\"]}}\n🔢 Остаток: {{$json[\"quantity\"]}}\n📉 Расход: {{$json[\"daily_usage\"]}}/день\n⏳ Закончится через: {{$json[\"days_left\"]}} дней\n❗ Причина: {{$json[\"alert_reason\"]}}\n\n👉 Требуется пополнение!",
+        "additionalFields": {}
+      },
+      "name": "Отправка в Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        608,
+        0
+      ],
+      "id": "476541c4-d708-44e2-b4cb-d6a4b9291796",
+      "webhookId": "578d14d2-df7f-4cd5-99b6-bd6de8ffdbea",
+      "credentials": {
+        "telegramApi": {
+          "id": "Y15VPZdsdzBkp3KB",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        -224
+      ],
+      "id": "f45e9f07-4d8b-42ee-a9e0-a0c4bd9cf748",
+      "name": "When clicking ‘Execute workflow’",
+      "disabled": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Ежедневная проверка в 8:00": {
+      "main": [
+        [
+          {
+            "node": "Чтение критических позиций из БД",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Чтение критических позиций из БД": {
+      "main": [
+        [
+          {
+            "node": "Анализ и форматирование",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Анализ и форматирование": {
+      "main": [
+        [
+          {
+            "node": "Отправка в Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Чтение критических позиций из БД",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "05ecaa0c-c2e4-432e-bba0-99fdba904460",
+  "meta": {
+    "instanceId": "e23a5978e6ea9ed59a73427fff5ecc70f24669c3c4d7c9cdedbb05f32695749d"
+  },
+  "id": "fzdpH6VbslkWVFiG",
+  "tags": []
+}
