@@ -1,59 +1,32 @@
 -- =============================================================================
--- 📦 med-inventory-alert: Medical warehouse database initialization script
+-- 📦 med-inventory-alert: Medical warehouse database initialization
 -- =============================================================================
 --
--- 💡 Manual usage (without Docker):
---
--- 1. Connect to PostgreSQL as superuser:
---    $ sudo -u postgres psql
---
--- 2. Create the database:
---    =# CREATE DATABASE medinventory;
---
--- 3. Connect to it:
---    =# \c medinventory
---
--- 4. Run this script:
---    =# \i /path/to/init-db.sql
+-- 💡 Used on first startup of PostgreSQL container via docker-compose.
+--     Automatically creates schema and sample data.
 --
 -- =============================================================================
 
--- Create separate database for n8n (required if using PostgreSQL for n8n storage)
--- Note: This must be done by superuser (postgres), so we use DO + dblink or create manually.
--- Simpler: create it via shell, but since we can't, we'll rely on pre-creation.
--- Instead, we'll let n8n use SQLite for its own data (recommended for simplicity).
-
--- Reference table: package types
+-- Package types (e.g. vial, blister, pack)
 CREATE TABLE IF NOT EXISTS package_types (
     id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE  -- e.g. "флакон", "блистер", "упаковка", "ампула"
+    name TEXT NOT NULL UNIQUE
 );
 
--- Reference table: drugs
+-- Drugs reference
 CREATE TABLE IF NOT EXISTS drugs (
     id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,                -- Drug name
+    name TEXT NOT NULL UNIQUE,
     package_type_id INTEGER NOT NULL REFERENCES package_types(id) ON DELETE RESTRICT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Reference table: warehouses
+-- Warehouses reference
 CREATE TABLE IF NOT EXISTS warehouses (
     id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,                -- Warehouse name
-    location TEXT,                            -- Location description
+    name TEXT NOT NULL UNIQUE,
+    location TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Current stock levels (main monitoring table)
-CREATE TABLE IF NOT EXISTS stock (
-    drug_id INTEGER NOT NULL REFERENCES drugs(id) ON DELETE CASCADE,
-    warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
-    quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
-    daily_usage NUMERIC(10,2) NOT NULL DEFAULT 0.00,  -- Average daily consumption
-    threshold INTEGER NOT NULL DEFAULT 10,            -- Alert threshold
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (drug_id, warehouse_id)
 );
 
 -- Incoming stock log (deliveries)
@@ -62,9 +35,9 @@ CREATE TABLE IF NOT EXISTS stock_in (
     drug_id INTEGER NOT NULL REFERENCES drugs(id) ON DELETE RESTRICT,
     warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE RESTRICT,
     amount INTEGER NOT NULL CHECK (amount > 0),
-    supplier TEXT,                    -- Supplier name
-    invoice_number TEXT,              -- Invoice ID
-    expiry_date DATE,                 -- Expiry date
+    supplier TEXT,
+    invoice_number TEXT,
+    expiry_date DATE,
     recorded_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -74,9 +47,31 @@ CREATE TABLE IF NOT EXISTS stock_out (
     drug_id INTEGER NOT NULL REFERENCES drugs(id) ON DELETE RESTRICT,
     warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE RESTRICT,
     amount INTEGER NOT NULL CHECK (amount > 0),
-    recipient TEXT,                   -- Recipient (e.g. ward, patient)
-    purpose TEXT,                     -- Purpose of issuance
+    recipient TEXT,
+    purpose TEXT,
     recorded_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Daily inventory snapshots (e.g. from CSV import or manual count)
+CREATE TABLE IF NOT EXISTS daily_stock_snapshot (
+    drug_id INTEGER NOT NULL REFERENCES drugs(id),
+    warehouse_id INTEGER NOT NULL REFERENCES warehouses(id),
+    snapshot_date DATE NOT,
+    quantity INTEGER NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'calculated'
+        CHECK (source_type IN ('calculated', 'csv', 'manual')),
+    PRIMARY KEY (drug_id, warehouse_id, snapshot_date)
+);
+
+-- Current stock cache (used by monitoring/alerting workflow)
+CREATE TABLE IF NOT EXISTS stock (
+    drug_id INTEGER NOT NULL REFERENCES drugs(id) ON DELETE CASCADE,
+    warehouse_id INTEGER NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    daily_usage NUMERIC(10,2) NOT NULL DEFAULT 0.00,
+    threshold INTEGER NOT NULL DEFAULT 10,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (drug_id, warehouse_id)
 );
 
 -- Performance indexes
@@ -84,6 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_stock_warehouse ON stock(warehouse_id);
 CREATE INDEX IF NOT EXISTS idx_stock_drug ON stock(drug_id);
 CREATE INDEX IF NOT EXISTS idx_stock_in ON stock_in(drug_id, warehouse_id, recorded_at);
 CREATE INDEX IF NOT EXISTS idx_stock_out ON stock_out(drug_id, warehouse_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_snapshot_date ON daily_stock_snapshot(snapshot_date);
 
 -- =============================================================================
 -- 🧪 Sample data
@@ -119,18 +115,30 @@ VALUES
     ('Поликлиника', 'Корпус А, эт. 1')
 ON CONFLICT (name) DO NOTHING;
 
--- Initial stock levels
-INSERT INTO stock (drug_id, warehouse_id, quantity, daily_usage, threshold)
+-- Initial stock snapshots (simulates first inventory)
+INSERT INTO daily_stock_snapshot (drug_id, warehouse_id, snapshot_date, quantity, source_type)
 SELECT
     d.id,
     w.id,
+    CURRENT_DATE,
     CASE
-        WHEN d.name = 'Инсулин' AND w.name = 'Центральный склад' THEN 20
-        WHEN d.name = 'Инсулин' AND w.name = 'Хирургическое отделение' THEN 5
-        WHEN d.name = 'Аспирин' AND w.name = 'Поликлиника' THEN 100
+        WHEN d.name = 'Инсулин' AND w.name = 'Центральный склад' THEN 25
+        WHEN d.name = 'Инсулин' AND w.name = 'Хирургическое отделение' THEN 3
+        WHEN d.name = 'Аспирин' AND w.name = 'Поликлиника' THEN 80
         WHEN d.name = 'Амоксициллин' AND w.name = 'Центральный склад' THEN 30
         ELSE 0
     END,
+    'initial'
+FROM drugs d
+CROSS JOIN warehouses w
+ON CONFLICT (drug_id, warehouse_id, snapshot_date) DO NOTHING;
+
+-- Populate initial 'stock' cache from latest snapshot
+INSERT INTO stock (drug_id, warehouse_id, quantity, daily_usage, threshold)
+SELECT
+    ds.drug_id,
+    ds.warehouse_id,
+    ds.quantity,
     CASE
         WHEN d.name = 'Инсулин' THEN 2.5
         WHEN d.name = 'Аспирин' THEN 8.0
@@ -143,11 +151,12 @@ SELECT
         WHEN d.name = 'Аспирин' THEN 30
         ELSE 15
     END
-FROM drugs d
-CROSS JOIN warehouses w
+FROM daily_stock_snapshot ds
+JOIN drugs d ON ds.drug_id = d.id
+WHERE ds.snapshot_date = CURRENT_DATE
 ON CONFLICT (drug_id, warehouse_id) DO NOTHING;
 
--- Sample incoming delivery
+-- Sample incoming/outgoing logs (optional)
 INSERT INTO stock_in (drug_id, warehouse_id, amount, supplier, invoice_number, expiry_date)
 SELECT
     (SELECT id FROM drugs WHERE name = 'Инсулин'),
@@ -160,7 +169,6 @@ WHERE NOT EXISTS (
     SELECT 1 FROM stock_in WHERE invoice_number = 'INV-2025-1001'
 );
 
--- Sample outgoing issuance
 INSERT INTO stock_out (drug_id, warehouse_id, amount, recipient, purpose)
 SELECT
     (SELECT id FROM drugs WHERE name = 'Инсулин'),

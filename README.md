@@ -21,8 +21,8 @@ Built with **n8n**, **PostgreSQL**, and **Telegram** — no Google Sheets, no cl
 
 ---
 
-## 🌟 Architecture
-> mermaid
+## 🏗️ Architecture
+```mermaid
 graph LR
   A[PostgreSQL] -->|Read stock data| B(n8n Workflow)
   B --> C{Is stock low or critical?}
@@ -55,19 +55,29 @@ Docker and Docker Compose (v2+)
         Pass: medpass
 
 5. Configure Telegram
-    Create a bot via @BotFather
-    Get your Chat ID (send a message to bot, then open https://api.telegram.org/bot<TOKEN>/getUpdates)
-    In n8n workflow → Telegram node → set chatId and select Telegram credential
+    → Create a bot via @BotFather
+    → Get your Chat ID (send a message to bot, then open https://api.telegram.org/bot<TOKEN>/getUpdates)
+    → In n8n workflow → Telegram node → set chatId and select Telegram credential
 
 
 ---
+📥 Workflows
+This project includes three core workflows:
 
+    → stock-import.json — daily CSV import (Mon–Fri at 01:00)
+    → stock-sync.json — refresh stock cache from the latest snapshot (01:15)
+    → stock-alert.json — shortage monitoring and Telegram alerts (08:00)
+👉 Import them via ☰ → Import in the n8n UI.
+---
 ## 🏗️ Project Structure
 
 med-inventory-alert/
 ├── docker-compose.yml          # Services: n8n + PostgreSQL
 ├── init-db.sql                 # DB schema + sample data
-├── med-inventory-alert-workflow.json  # Ready-to-import n8n automation
+├── workflows/                  # ← new directory
+│   ├── stock-import.json       # CSV import workflow
+│   ├── stock-sync.json         # Stock cache sync
+│   └── stock-alert.json        # Telegram alerting
 ├── README.md
 ├── .gitignore
 └── (auto-created on first run)
@@ -75,10 +85,10 @@ med-inventory-alert/
     └── n8n-data/               # n8n credentials & workflows (ignored)
 
 
-## 🌟 Privacy & Compliance
+🔒 Privacy & Compliance
 No external SaaS (Google, Airtable, etc.)
 All data stays on your machine
 Ideal for environments under sanctions or with strict data localization laws
 
-## 🌟 License
+📄 License
 MIT License — feel free to use, modify, and deploy.
