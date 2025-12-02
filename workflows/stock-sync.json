@@ -1,0 +1,80 @@
+{
+  "name": "stock-sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "triggerAtHour": 2
+            },
+            {},
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -976,
+        -128
+      ],
+      "id": "5999e369-537d-4755-b771-3d5c21d2fed1",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Updating the stock table based on the latest snapshot from daily_stock_snapshot\nWITH current_settings AS (\n  -- keeping the current thresholds and average consumption\n  SELECT drug_id, warehouse_id, threshold, daily_usage\n  FROM stock\n),\nlatest_snapshot AS (\n  -- receiving the most recent snapshot for each pair (drug, warehouse)\n  SELECT DISTINCT ON (drug_id, warehouse_id)\n    drug_id,\n    warehouse_id,\n    quantity\n  FROM daily_stock_snapshot\n  ORDER BY drug_id, warehouse_id, snapshot_date DESC\n)\n-- Updating or insert records in stock\nINSERT INTO stock (drug_id, warehouse_id, quantity, threshold, daily_usage)\nSELECT\n  ls.drug_id,\n  ls.warehouse_id,\n  ls.quantity,\n  COALESCE(cs.threshold, 10) AS threshold,\n  COALESCE(cs.daily_usage, 0.0) AS daily_usage\nFROM latest_snapshot ls\nLEFT JOIN current_settings cs\n  ON ls.drug_id = cs.drug_id AND ls.warehouse_id = cs.warehouse_id\nON CONFLICT (drug_id, warehouse_id)\nDO UPDATE SET\n  quantity = EXCLUDED.quantity,\n  updated_at = NOW();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -528,
+        -128
+      ],
+      "id": "8274820b-c497-4355-ad2e-34598479cfe2",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "atKdRxWDzhDXYkku",
+          "name": "medinventory-db"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "54e8bf93-2763-4a20-9980-ed03c331b3a2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e23a5978e6ea9ed59a73427fff5ecc70f24669c3c4d7c9cdedbb05f32695749d"
+  },
+  "id": "QZrbep5XvlwXo6ez",
+  "tags": []
+}
