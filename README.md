@@ -67,6 +67,7 @@ This project includes three core workflows:
     → stock-import.json — daily CSV import (Mon–Fri at 01:00)
     → stock-sync.json — refresh stock cache from the latest snapshot (01:15)
     → stock-alert.json — shortage monitoring and Telegram alerts (08:00)
+    → stock-chart.json — stock availability schedule and Telegram alerts (09:00)
 👉 Import them via ☰ → Import in the n8n UI.
 ---
 ## 🏗️ Project Structure
@@ -77,6 +78,7 @@ med-inventory-alert/
 ├── workflows/                  # ← new directory
 │   ├── stock-import.json       # CSV import workflow
 │   ├── stock-sync.json         # Stock cache sync
+│   ├── stock-char.json         # Stock chart view 
 │   └── stock-alert.json        # Telegram alerting
 ├── README.md
 ├── .gitignore
