@@ -1,0 +1,182 @@
+{
+  "name": "stock-chart",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1504,
+        -624
+      ],
+      "id": "cd5c369e-499e-4a90-b166-9bc6e753e5bd",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  d.name AS drug_name,\n  dss.snapshot_date::DATE AS date,\n  dss.quantity\nFROM daily_stock_snapshot dss\nJOIN drugs d ON dss.drug_id = d.id\nwhere dss.warehouse_id = 1\n\tand dss.snapshot_date :: date > '2025-01-01'\norder by dss.snapshot_date desc;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1056,
+        -416
+      ],
+      "id": "63885910-a680-4465-8ba5-cd9dc830c206",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "atKdRxWDzhDXYkku",
+          "name": "medinventory-db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = {};\n\n// group by drug_name\nfor (const item of items) {\n  const { drug_name, date, quantity } = item.json;\n  if (!data[drug_name]) {\n    data[drug_name] = [];\n  }\n  data[drug_name].push({ date, quantity });\n}\n\n// collecting al dates (for axis X)\nconst allDates = [...new Set(items.map(i => i.json.date))];\nallDates.sort();\n\n// generate datasets for QuickChart\nconst datasets = Object.entries(data).map(([drugName, points]) => {\n  // fill spase\n  const values = allDates.map(date => {\n    const point = points.find(p => p.date === date);\n    return point ? point.quantity : 0;\n  });\n\n  // generate colors\n  let hash = 0;\n  for (let i = 0; i < drugName.length; i++) {\n    hash = drugName.charCodeAt(i) + ((hash << 5) - hash);\n  }\n  const color = '#' + Math.abs(hash).toString(16).substring(0, 6).padStart(6, '0');\n\n  return {\n    label: drugName,\n    data: values,\n    borderColor: color,\n    backgroundColor: color + '40', \n    fill: false\n  };\n});\n\n// return for QuickChart\nreturn [{\n  json: {\n    chartData: {\n      type: 'line',\n      data: {\n        labels: allDates,\n        datasets: datasets\n      },\n      options: {\n        plugins: {\n          legend: { display: true }\n        },\n        scales: {\n          x: { display: true },\n          y: { beginAtZero: true }\n        }\n      }\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        -416
+      ],
+      "id": "f764302c-940d-41fe-bec4-7f3ff103b241",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://quickchart.io/chart",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"width\": 800, \"height\": 500, \"format\": \"png\", \"chart\": $json.chartData } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -640,
+        -416
+      ],
+      "id": "f37d1dba-6bad-4ef0-878b-3098ee1be6ae",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "1176202075",
+        "binaryData": true,
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -416,
+        -416
+      ],
+      "id": "c581d708-63e0-4add-a47a-b1df0b0b973a",
+      "name": "Send a photo message",
+      "webhookId": "5a81ef10-fe3a-472f-bac1-f4c149c03ec1",
+      "credentials": {
+        "telegramApi": {
+          "id": "Y15VPZdsdzBkp3KB",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "triggerAtHour": 9
+            },
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1360,
+        -416
+      ],
+      "id": "36a35bb2-efc6-4def-9c55-61bfd96f287a",
+      "name": "Schedule Trigger"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        []
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send a photo message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "718d07ee-acd7-4361-9d89-afd497658762",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e23a5978e6ea9ed59a73427fff5ecc70f24669c3c4d7c9cdedbb05f32695749d"
+  },
+  "id": "q0PRtHubgNohXOVc",
+  "tags": []
+}
